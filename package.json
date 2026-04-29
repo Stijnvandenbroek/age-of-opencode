@@ -1,0 +1,51 @@
+{
+  "name": "age-of-opencode",
+  "version": "1.0.0",
+  "description": "Age of Empires II sound effects for OpenCode - wololo your way through coding sessions",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "age-of-empires",
+    "aoe",
+    "sounds",
+    "notifications",
+    "fun",
+    "wololo"
+  ],
+  "homepage": "https://github.com/Stijnvandenbroek/age-of-opencode#readme",
+  "bugs": {
+    "url": "https://github.com/Stijnvandenbroek/age-of-opencode/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Stijnvandenbroek/age-of-opencode.git"
+  },
+  "license": "MIT",
+  "type": "module",
+  "main": "index.ts",
+  "files": [
+    "index.ts",
+    "src/",
+    "data/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.0.29",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "bun": ">=1.0.0"
+  },
+  "credits": {
+    "inspired-by": [
+      "https://github.com/kylesnowschwartz/age-of-claude",
+      "https://github.com/pantheon-org/opencode-warcraft-notifications"
+    ]
+  }
+}
