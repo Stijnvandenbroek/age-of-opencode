@@ -54,13 +54,7 @@ function pickRandom<T>(items: readonly T[]): T {
  * playback works reliably inside the OpenCode runtime.
  */
 export const AgeOfOpencodePlugin: Plugin = async (ctx) => {
-  const { client, $ } = ctx as unknown as {
-    client: {
-      tui?: { showToast?: (input: { body: Record<string, unknown> }) => Promise<unknown> };
-      app?: { log?: (input: unknown) => Promise<unknown> };
-    };
-    $: (template: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
-  };
+  const { client, $ } = ctx;
 
   const debug = process.env.AGE_OF_OPENCODE_DEBUG === '1';
 
