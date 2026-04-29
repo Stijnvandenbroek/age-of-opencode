@@ -33,23 +33,30 @@ Plays a different Age of Empires II sound effect on each key OpenCode lifecycle 
 
 ### From a local checkout
 
-Clone the repository and reference it from your OpenCode project's
-`.opencode/plugins/` directory or your global `~/.config/opencode/plugins/` directory.
+Clone the repository into your OpenCode plugin directory. OpenCode auto-loads
+files placed directly in `~/.config/opencode/plugin/` (singular) globally, or
+in `.opencode/plugin/` per-project.
 
 ```bash
-git clone https://github.com/Stijnvandenbroek/age-of-opencode.git ~/.config/opencode/plugins/age-of-opencode
+git clone https://github.com/Stijnvandenbroek/age-of-opencode.git ~/.config/opencode/plugin/age-of-opencode
 ```
 
-Then add a tiny loader file so OpenCode picks up the plugin from its non-standard
-location (OpenCode auto-loads files placed directly in the plugin directory):
+Then add a tiny loader file so OpenCode picks up the plugin from its
+subdirectory:
 
-`~/.config/opencode/plugins/age-of-opencode-loader.ts`
+`~/.config/opencode/plugin/age-of-opencode-loader.ts`
 
 ```ts
 export { AgeOfOpencodePlugin } from './age-of-opencode/index.ts';
 ```
 
 Restart OpenCode and you should hear the startup sound on your next session.
+
+> **Note:** the directory is `plugin` (singular), not `plugins`. OpenCode only
+> scans the singular directory for auto-loaded plugin files. If your plugin is
+> silent, double-check the path and look for a
+> `service=plugin path=...age-of-opencode-loader.ts loading plugin` line in
+> the latest log file under `~/.local/share/opencode/log/`.
 
 ### From npm (if/when published)
 
