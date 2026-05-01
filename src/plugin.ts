@@ -27,6 +27,7 @@ const SOUND_DESCRIPTIONS: Record<string, string> = {
   'priest_convert_ayeohoho5.WAV': 'Aye oh oh oh!',
   'dialogue_i_need_food.wav': 'I need food!',
   'dialogue_gold_please.wav': 'Gold please!',
+  'dialogue_give_me_some_stone.wav': 'Give me some stone',
   'dialogue_get_out.wav': 'Get out!',
   'dialogue_im_weak_please_dont_kill_me.wav': "I'm weak, please don't kill me",
   'dialogue_no.wav': 'No!',
@@ -137,6 +138,9 @@ const IDLE_SOUNDS = [
   'dialogue_whos_the_man.wav',
   'dialogue_ha_ha_ha.wav',
 ];
+
+// Legacy: IDLE_SOUNDS is kept for backward compatibility but session.idle
+// now maps to complete/subagent_complete to match opencode-notifier behavior.
 
 function pickRandom<T>(items: readonly T[]): T {
   return items[Math.floor(Math.random() * items.length)] as T;
