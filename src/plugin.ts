@@ -142,6 +142,72 @@ function pickRandom<T>(items: readonly T[]): T {
   return items[Math.floor(Math.random() * items.length)] as T;
 }
 
+type UnknownRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): UnknownRecord | null {
+  return value !== null && typeof value === 'object' ? (value as UnknownRecord) : null;
+}
+
+function getNestedRecord(root: unknown, ...path: string[]): UnknownRecord | null {
+  let current: unknown = root;
+  for (const key of path) {
+    const record = asRecord(current);
+    if (!record || !(key in record)) {
+      return null;
+    }
+    current = record[key];
+  }
+  return asRecord(current);
+}
+
+function getStringField(record: UnknownRecord | null, key: string): string | null {
+  if (!record) return null;
+  const value = record[key];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+const IDLE_COMPLETE_DELAY_MS = 350;
+const pendingIdleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const sessionIdleSequence = new Map<string, number>();
+const subagentSessionIds = new Set<string>();
+
+function getSessionIDFromEvent(event: unknown): string | null {
+  const properties = getNestedRecord(event, 'properties');
+  return getStringField(properties, 'sessionID');
+}
+
+interface SessionLifecycleInfo {
+  id: string | null;
+  title: string | null;
+  parentID: string | null;
+}
+
+function getSessionLifecycleInfo(event: unknown): SessionLifecycleInfo {
+  const info = getNestedRecord(event, 'properties', 'info');
+  return {
+    id: getStringField(info, 'id'),
+    title: getStringField(info, 'title'),
+    parentID: getStringField(info, 'parentID'),
+  };
+}
+
+function clearPendingIdleTimer(sessionID: string): void {
+  const timer = pendingIdleTimers.get(sessionID);
+  if (!timer) return;
+  clearTimeout(timer);
+  pendingIdleTimers.delete(sessionID);
+}
+
+function bumpSessionIdleSequence(sessionID: string): number {
+  const nextSequence = (sessionIdleSequence.get(sessionID) ?? 0) + 1;
+  sessionIdleSequence.set(sessionID, nextSequence);
+  return nextSequence;
+}
+
+function hasCurrentSessionIdleSequence(sessionID: string, sequence: number): boolean {
+  return sessionIdleSequence.get(sessionID) === sequence;
+}
+
 export const AgeOfOpencodePlugin: Plugin = async (ctx) => {
   const { client, $ } = ctx;
 
@@ -218,47 +284,138 @@ export const AgeOfOpencodePlugin: Plugin = async (ctx) => {
     }
   };
 
+  // Fire client_connected shortly after plugin startup
+  setTimeout(() => {
+    void handleEvent('client_connected', CLIENT_CONNECTED_SOUNDS);
+  }, 100);
+
+  const processSessionIdle = async (sessionID: string, sequence: number): Promise<void> => {
+    if (!hasCurrentSessionIdleSequence(sessionID, sequence)) return;
+
+    // Fast path: if we already know this is a subagent, play subagent_complete
+    if (subagentSessionIds.has(sessionID)) {
+      await handleEvent('subagent_complete', SUBAGENT_COMPLETE_SOUNDS);
+      return;
+    }
+
+    // Otherwise play complete
+    await handleEvent('complete', COMPLETE_SOUNDS);
+  };
+
+  const scheduleSessionIdle = (sessionID: string): void => {
+    clearPendingIdleTimer(sessionID);
+    const sequence = bumpSessionIdleSequence(sessionID);
+
+    const timer = setTimeout(() => {
+      pendingIdleTimers.delete(sessionID);
+      void processSessionIdle(sessionID, sequence).catch(() => undefined);
+    }, IDLE_COMPLETE_DELAY_MS);
+
+    pendingIdleTimers.set(sessionID, timer);
+  };
+
   return {
     event: async ({ event }) => {
       const type = (event as { type: string }).type;
-      if (debug) void log('debug', 'event', { type });
+      if (debug) void log('debug', 'sdk event', { type });
 
-      switch (type) {
-        case 'session.started':
-          await handleEvent('session.started', SESSION_STARTED_SOUNDS);
-          break;
-        case 'permission':
-          await handleEvent('permission', PERMISSION_SOUNDS);
-          break;
-        case 'question':
-          await handleEvent('question', QUESTION_SOUNDS);
-          break;
-        case 'complete':
+      // session.created → session_started
+      if (type === 'session.created') {
+        const info = getSessionLifecycleInfo(event);
+        if (info.parentID && info.id) {
+          subagentSessionIds.add(info.id);
+        } else {
+          await handleEvent('session_started', SESSION_STARTED_SOUNDS);
+        }
+        return;
+      }
+
+      // session.updated → track subagents
+      if (type === 'session.updated') {
+        const info = getSessionLifecycleInfo(event);
+        if (info.parentID && info.id) {
+          subagentSessionIds.add(info.id);
+        }
+        return;
+      }
+
+      // session.deleted → cleanup
+      if (type === 'session.deleted') {
+        const info = getSessionLifecycleInfo(event);
+        if (info.id) {
+          subagentSessionIds.delete(info.id);
+          clearPendingIdleTimer(info.id);
+        }
+        return;
+      }
+
+      // permission.asked → permission
+      if (type === 'permission.asked') {
+        await handleEvent('permission', PERMISSION_SOUNDS);
+        return;
+      }
+
+      // session.idle → complete / subagent_complete (with debounce)
+      if (type === 'session.idle') {
+        const sessionID = getSessionIDFromEvent(event);
+        if (sessionID) {
+          scheduleSessionIdle(sessionID);
+        } else {
           await handleEvent('complete', COMPLETE_SOUNDS);
-          break;
-        case 'subagent_complete':
-          await handleEvent('subagent_complete', SUBAGENT_COMPLETE_SOUNDS);
-          break;
-        case 'error':
-          await handleEvent('error', ERROR_SOUNDS);
-          break;
-        case 'user_cancelled':
+        }
+        return;
+      }
+
+      // session.error → error / user_cancelled
+      if (type === 'session.error') {
+        const sessionID = getSessionIDFromEvent(event);
+        const errorRecord = getNestedRecord(event, 'properties', 'error');
+        const errorName = getStringField(errorRecord, 'name');
+        const isUserCancelled = errorName === 'MessageAbortedError';
+        
+        if (sessionID) {
+          clearPendingIdleTimer(sessionID);
+          bumpSessionIdleSequence(sessionID);
+        }
+        
+        if (isUserCancelled) {
           await handleEvent('user_cancelled', USER_CANCELLED_SOUNDS);
-          break;
-        case 'plan_exit':
-          await handleEvent('plan_exit', PLAN_EXIT_SOUNDS);
-          break;
-        case 'user_message':
-          await handleEvent('user_message', USER_MESSAGE_SOUNDS);
-          break;
-        case 'client_connected':
-          await handleEvent('client_connected', CLIENT_CONNECTED_SOUNDS);
-          break;
-        case 'session.idle':
-          await handleEvent('session.idle', IDLE_SOUNDS);
-          break;
-        default:
-          if (debug) void log('debug', 'unhandled event', { type });
+        } else {
+          await handleEvent('error', ERROR_SOUNDS);
+        }
+        return;
+      }
+
+      // message.updated → user_message
+      if (type === 'message.updated') {
+        const info = getNestedRecord(event, 'properties', 'info');
+        const role = getStringField(info, 'role');
+        const sessionID = getStringField(info, 'sessionID');
+        
+        if (role === 'user') {
+          // Only fire for non-subagent sessions
+          if (!sessionID || !subagentSessionIds.has(sessionID)) {
+            await handleEvent('user_message', USER_MESSAGE_SOUNDS);
+          }
+        }
+        return;
+      }
+
+      if (debug) void log('debug', 'unhandled event', { type });
+    },
+
+    // permission.ask hook → permission
+    'permission.ask': async () => {
+      await handleEvent('permission', PERMISSION_SOUNDS);
+    },
+
+    // tool.execute.before hook → question / plan_exit
+    'tool.execute.before': async (input) => {
+      if (input.tool === 'question') {
+        await handleEvent('question', QUESTION_SOUNDS);
+      }
+      if (input.tool === 'plan_exit') {
+        await handleEvent('plan_exit', PLAN_EXIT_SOUNDS);
       }
     },
   };
