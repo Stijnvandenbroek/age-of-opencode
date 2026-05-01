@@ -31,7 +31,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "prepublishOnly": "npm run type-check"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.0.29",
